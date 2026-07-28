@@ -15,12 +15,18 @@ class RemoteAIClient(AIClient):
     """
 
     def _get_client(self, timeout: float = 60.0) -> httpx.AsyncClient:
-        return httpx.AsyncClient(base_url=settings.ai_service_url, timeout=timeout)
+        headers = {}
+        if settings.ai_api_key:
+            headers["X-AI-API-Key"] = settings.ai_api_key
+        return httpx.AsyncClient(base_url=settings.ai_service_url, timeout=timeout, headers=headers)
 
     def _get_absolute_path(self, path: str) -> str:
         from pathlib import Path
         if not path or path.startswith("http://") or path.startswith("https://"):
             return path
+        # Strip leading /uploads/ prefix from paths stored by older save_file
+        if path.startswith("/uploads/"):
+            path = path[len("/uploads/"):]
         p = Path(path)
         if p.is_absolute():
             return str(p)
@@ -64,7 +70,7 @@ class RemoteAIClient(AIClient):
         self,
         text: str,
     ) -> str:
-        async with self._get_client() as client:
+        async with self._get_client(timeout=180.0) as client:
             response = await client.post("/api/v1/chat/summarize", json={"text": text})
             response.raise_for_status()
             return response.json()["summary"]
@@ -128,7 +134,7 @@ class RemoteAIClient(AIClient):
         session_id: uuid.UUID | None = None,
     ) -> int:
         """Process, describe, embed, and store image vectors for a document."""
-        async with self._get_client(timeout=120.0) as client:
+        async with self._get_client(timeout=300.0) as client:
             response = await client.post(
                 "/api/v1/documents/ingest_images",
                 json={
